@@ -1,0 +1,58 @@
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: validator
+spec:
+  serviceName: validator
+  replicas: 1
+  selector:
+    matchLabels:
+      app: validator
+  volumeClaimTemplates:
+    - metadata:
+        name: celo-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 16Gi
+  template:
+    metadata:
+      labels:
+        app: validator
+    spec:
+      automountServiceAccountToken: true
+      serviceAccount: validator
+      serviceAccountName: validator
+      volumes:
+        - name: celo-data
+          persistentVolumeClaim:
+            claimName: celo-data
+      containers:
+        - name: informer
+          image: mantalabs/proxy-informer:e2e
+        - name: celo
+          image: us.gcr.io/celo-org/geth:1.2.1
+          args:
+            - --verbosity=3
+            - --syncmode=full
+            - --rpc
+            - --rpcaddr=0.0.0.0
+            - --rpcapi=eth,net,web3,debug,admin,personal,istanbul
+            - --light.serve=90
+            - --light.maxpeers=1000
+            - --maxpeers=1100
+            - --nousb
+            - --baklava
+            - --proxy.proxied
+            - --nodiscover
+            # Geth requires at least one enode URL pair. Use TEST-NET
+            # public IP addresses because geth checks that the
+            # external enode URL uses a public IP address.
+            - --proxy.proxyenodeurlpairs="enode://784fa3c40ff18cf53ed0bac29e60af1a29829eda58887268dd806683fecff09c68547134eacee2b80736f0633bdedf821449a105839f8ae76ea8ac7f240e975b@198.51.100.100:30303;enode://784fa3c40ff18cf53ed0bac29e60af1a29829eda58887268dd806683fecff09c68547134eacee2b80736f0633bdedf821449a105839f8ae76ea8ac7f240e975b@192.0.2.100:30305"
+          volumeMounts:
+            - name: celo-data
+              mountPath: /root/.celo

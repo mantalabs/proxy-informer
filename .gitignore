@@ -1,3 +1,7 @@
+proxy-informer
+e2e/.kubeconfig
+venv/
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
