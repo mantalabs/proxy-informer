@@ -52,6 +52,18 @@ type IstanbulGetProxies struct {
 	Result  []Proxy
 }
 
+type IstanbulAddProxy struct {
+	Jsonrpc string
+	Id      int
+	Result  bool
+}
+
+type IstanbulRemoveProxy struct {
+	Jsonrpc string
+	Id      int
+	Result  bool
+}
+
 func main() {
 	klog.InitFlags(nil)
 
@@ -252,7 +264,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 		}
 	}
 
-	result := make([]Proxy, len(proxies))
+	result := make([]Proxy, 0)
 	for _, proxy := range proxies {
 		if proxy.InternalEnodeUrl != "" && proxy.ExternalEnodeUrl != "" {
 			result = append(result, proxy)
@@ -315,10 +327,27 @@ func (controller *Controller) Synchronize() error {
 	}
 
 	//
-	// TODO: actually add and remove proxies from the Validator.
+	// Remove Proxies first. The Validator returns success but does not change
+	// its configuration when we add a Proxy that shares a public key with a
+	// configured Proxy. We can avoid this by removing Proxies first.
 	//
-	klog.Infof("Proxies to add: %+v\n", proxiesToAdd)
 	klog.Infof("Proxies to remove: %+v\n", proxiesToRemove)
+	for _, proxy := range proxiesToRemove {
+		params := []interface{}{proxy.InternalEnodeUrl}
+		_, err := controller.validator.rpc("istanbul_removeProxy", params, IstanbulRemoveProxy{})
+		if err != nil {
+			klog.Warningf("Failed to remove proxy from validator: %+v %v", proxy, err)
+		}
+	}
+
+	klog.Infof("Proxies to add: %+v\n", proxiesToAdd)
+	for _, proxy := range proxiesToAdd {
+		params := []interface{}{proxy.InternalEnodeUrl, proxy.ExternalEnodeUrl}
+		_, err := controller.validator.rpc("istanbul_addProxy", params, IstanbulAddProxy{})
+		if err != nil {
+			klog.Warningf("Failed to add proxy to validator: %+v %v", proxy, err)
+		}
+	}
 
 	return nil
 }
