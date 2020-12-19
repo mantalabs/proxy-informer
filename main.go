@@ -79,20 +79,25 @@ func main() {
 		close(stopChan)
 	}()
 
+	//
+	// Watch events on Service objects matching a Kubernetes lable selector.
+	//
 	// https://pkg.go.dev/k8s.io/client-go/tools/cache
 	// https://pkg.go.dev/k8s.io/client-go/informers
+	// https://pkg.go.dev/k8s.io/client-go@v1.5.1/1.5/pkg/api/v1#Service
 	factory := informers.NewSharedInformerFactoryWithOptions(clientset, 0,
 		informers.WithNamespace(proxyNamespace),
 		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
 			options.LabelSelector = proxyLabelSelector
 		}))
+	informer := factory.Core().V1().Services().Informer()
 
 	validator, err := newValidator(rpcURL)
 	if err != nil {
 		klog.Fatalf("Failed to create Validator: %v", err)
 	}
 
-	controller, err := newController(validator, factory)
+	controller, err := newController(validator, informer)
 	if err != nil {
 		klog.Fatalf("Failed to create Controller: %v", err)
 	}
@@ -147,12 +152,10 @@ type Controller struct {
 	informer  cache.SharedIndexInformer
 }
 
-func newController(validator *Validator, informerFactory informers.SharedInformerFactory) (*Controller, error) {
-	// https://pkg.go.dev/k8s.io/client-go@v1.5.1/1.5/pkg/api/v1#Service
-	informer := informerFactory.Core().V1().Services().Informer()
-	controller := Controller{validator, informer}
+func newController(validator *Validator, serviceInformer cache.SharedIndexInformer) (*Controller, error) {
+	controller := Controller{validator, serviceInformer}
 
-	informer.AddEventHandler(
+	serviceInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				service := obj.(*corev1.Service)
@@ -236,6 +239,16 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 }
 
 func (controller *Controller) Synchronize() error {
+	//
+	// Ensure the Validator proxy configuration matches the current Proxy Services
+	// we discover.
+	// * Get the list of Proxies configured on the Validator
+	// * Get the list of Proxies discovered on Kubernetes
+	// * Calculate Proxies to remove from and to add to the Validator configuration
+	// * Remove Proxies from Validator configuration
+	// * Add Proxies to Valdiator configuration
+	//
+
 	configuredProxies, err := controller.validator.GetConfiguredProxies()
 	if err != nil {
 		return err
