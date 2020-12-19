@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -218,24 +219,48 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 	}
 
 	services := informer.GetStore().List()
-	proxies := make([]Proxy, 0)
+	proxies := make(map[string]Proxy, 0)
 	//
-	// Filter for Services that have non-empty annotations for enode URLs.
+	// Look for Services that have non-empty annotations for enode URLs and
+	// group enode URLs by public key/username to define Proxies.
 	//
 	for _, service := range services {
-		//
-		// TODO: support multiple Kubernetes Services per Proxy. E.g., a Service
-		// the internal/private Proxy interface and a Service for the external/public
-		// Proxy inteface.
-		//
 		annotations := service.(*corev1.Service).ObjectMeta.GetAnnotations()
-		externalEnodeUrl := annotations[externalEnodeURLAnnotation]
-		internalEnodeUrl := annotations[internalEnodeURLAnnotation]
-		if internalEnodeUrl != "" && externalEnodeUrl != "" {
-			proxies = append(proxies, Proxy{externalEnodeUrl, internalEnodeUrl})
+
+		externalEnodeURLString := annotations[externalEnodeURLAnnotation]
+		if externalEnodeURLString != "" {
+			externalEnodeURL, err := url.Parse(externalEnodeURLString)
+			if err != nil && externalEnodeURL.User.Username() != "" {
+				klog.Warningf("Failed to parse enode %v: %v", externalEnodeURLString, err)
+			} else {
+				proxy := proxies[externalEnodeURL.User.Username()]
+				proxy.ExternalEnodeUrl = externalEnodeURLString
+				proxies[externalEnodeURL.User.Username()] = proxy
+			}
+		}
+
+		internalEnodeURLString := annotations[internalEnodeURLAnnotation]
+		if internalEnodeURLString != "" {
+			internalEnodeURL, err := url.Parse(internalEnodeURLString)
+			if err != nil && internalEnodeURL.User.Username() != "" {
+				klog.Warningf("Failed to parse enode %v: %v", internalEnodeURLString, err)
+			} else {
+				proxy := proxies[internalEnodeURL.User.Username()]
+				proxy.InternalEnodeUrl = internalEnodeURLString
+				proxies[internalEnodeURL.User.Username()] = proxy
+			}
 		}
 	}
-	return proxies, nil
+
+	result := make([]Proxy, len(proxies))
+	for _, proxy := range proxies {
+		if proxy.InternalEnodeUrl != "" && proxy.ExternalEnodeUrl != "" {
+			result = append(result, proxy)
+		} else {
+			klog.Infof("Skipping partially defined proxy: %+v", proxy)
+		}
+	}
+	return result, nil
 }
 
 func (controller *Controller) Synchronize() error {
