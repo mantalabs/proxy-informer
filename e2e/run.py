@@ -59,6 +59,7 @@ def main(delete_cluster=None,
         kind('load', 'docker-image', 'mantalabs/proxy-informer:e2e')
 
     kubectl('apply', '-f', 'e2e/service.yaml')
+    kubectl('apply', '-f', 'e2e/rbac.yaml')
     kubectl('apply', '-f', 'e2e/statefulset-tests.yaml')
 
     # Give things some time to start.
@@ -110,7 +111,7 @@ def parse_args():
                         dest='docker_build',
                         action='store_false')
     parser.add_argument('--startup-delay',
-                        default=30,
+                        default=90,
                         type=float)
 
     parser.set_defaults(
