@@ -93,7 +93,7 @@ func main() {
 	}()
 
 	//
-	// Watch events on Service objects matching a Kubernetes lable selector.
+	// Watch events on Service objects matching a Kubernetes label selector.
 	//
 	// https://pkg.go.dev/k8s.io/client-go/tools/cache
 	// https://pkg.go.dev/k8s.io/client-go/informers
@@ -234,7 +234,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 	proxies := make(map[string]Proxy, 0)
 	//
 	// Look for Services that have non-empty annotations for enode URLs and
-	// group enode URLs by public key/username to define Proxies.
+	// group enode URLs by node ID to define Proxies.
 	//
 	for _, service := range services {
 		annotations := service.(*corev1.Service).ObjectMeta.GetAnnotations()
@@ -328,7 +328,7 @@ func (controller *Controller) Synchronize() error {
 
 	//
 	// Remove Proxies first. The Validator returns success but does not change
-	// its configuration when we add a Proxy that shares a public key with a
+	// its configuration when we add a Proxy that shares a node ID with a
 	// configured Proxy. We can avoid this by removing Proxies first.
 	//
 	klog.Infof("Proxies to remove: %+v\n", proxiesToRemove)
