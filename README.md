@@ -32,9 +32,10 @@ two annotations on `Service` objects:
 | `proxy.mantalabs.com/internal-enode-url` | Internal enode URL |
 | `proxy.mantalabs.com/external-enode-url` | External enode URL |
 
-Annotations can be on two different `Service` objects. For example,
-on an internal `Service` for a validator and on a public `Service` for
-external traffic.
+Annotations can be on two different `Service` objects. For example, on
+an internal `Service` for a validator and on a public `Service` for
+external traffic. proxy-informer will match internal and external
+enode URLs based on their node ID.
 
 ## Related
 
