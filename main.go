@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -234,31 +235,33 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 	proxies := make(map[string]Proxy, 0)
 	//
 	// Look for Services that have non-empty annotations for enode URLs and
-	// group enode URLs by node ID to define Proxies.
+	// group enode URLs by node ID to define Proxies. geth will resolve/lookup
+	// hostnames into IPs before adding a Proxy to its configuration. Normalize
+	// enode URLs with lookup so that all Proxy objects have IPs.
 	//
 	for _, service := range services {
 		annotations := service.(*corev1.Service).ObjectMeta.GetAnnotations()
 
 		externalEnodeURLString := annotations[externalEnodeURLAnnotation]
 		if externalEnodeURLString != "" {
-			externalEnodeURL, err := url.Parse(externalEnodeURLString)
+			externalEnodeURL, err := lookupURL(externalEnodeURLString)
 			if err != nil && externalEnodeURL.User.Username() != "" {
 				klog.Warningf("Failed to parse enode %v: %v", externalEnodeURLString, err)
 			} else {
 				proxy := proxies[externalEnodeURL.User.Username()]
-				proxy.ExternalEnodeUrl = externalEnodeURLString
+				proxy.ExternalEnodeUrl = externalEnodeURL.String()
 				proxies[externalEnodeURL.User.Username()] = proxy
 			}
 		}
 
 		internalEnodeURLString := annotations[internalEnodeURLAnnotation]
 		if internalEnodeURLString != "" {
-			internalEnodeURL, err := url.Parse(internalEnodeURLString)
+			internalEnodeURL, err := lookupURL(internalEnodeURLString)
 			if err != nil && internalEnodeURL.User.Username() != "" {
 				klog.Warningf("Failed to parse enode %v: %v", internalEnodeURLString, err)
 			} else {
 				proxy := proxies[internalEnodeURL.User.Username()]
-				proxy.InternalEnodeUrl = internalEnodeURLString
+				proxy.InternalEnodeUrl = internalEnodeURL.String()
 				proxies[internalEnodeURL.User.Username()] = proxy
 			}
 		}
@@ -350,6 +353,30 @@ func (controller *Controller) Synchronize() error {
 	}
 
 	return nil
+}
+
+func lookupURL(urlString string) (*url.URL, error) {
+	result, err := url.Parse(urlString)
+	if err != nil {
+		return nil, err
+	}
+
+	hostname := result.Hostname()
+	ip := net.ParseIP(hostname)
+	// If ip == nil, assume hostname maps to a resolvable DNS entry.
+	if ip == nil {
+		ips, err := net.LookupIP(hostname)
+		if err != nil {
+			return nil, err
+		}
+		ip = ips[0]
+		if result.Port() != "" {
+			result.Host = ip.String() + ":" + result.Port()
+		} else {
+			result.Host = ip.String()
+		}
+	}
+	return result, nil
 }
 
 func newClientset(filename string) (*kubernetes.Clientset, error) {
