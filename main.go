@@ -363,6 +363,7 @@ func lookupURL(urlString string) (*url.URL, error) {
 
 	hostname := result.Hostname()
 	ip := net.ParseIP(hostname)
+	// If ip == nil, assume hostname maps to a resolvable DNS entry.
 	if ip == nil {
 		ips, err := net.LookupIP(hostname)
 		if err != nil {
