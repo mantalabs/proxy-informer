@@ -15,7 +15,7 @@ def main(delete_cluster=None,
          kind_config=None,
          kind_image=None,
          kubeconfig=None,
-         startup_delay=None):
+         timeout=None):
 
     def kubectl(*args, return_output=False, json_output=False):
         args = ['kubectl', *args]
@@ -62,25 +62,27 @@ def main(delete_cluster=None,
     kubectl('apply', '-f', 'e2e/rbac.yaml')
     kubectl('apply', '-f', 'e2e/statefulset-tests.yaml')
 
-    # Give things some time to start.
-    print(f'\n\nWaiting {startup_delay} seconds ...')
-    time.sleep(startup_delay)
+    started_at = time.time()
+    timeout_at = started_at + timeout
+    while True:
+        try:
+            elector_log = kubectl('logs', 'validator-0', 'informer', return_output=True)
+            # Indication that the informer is communicating with the validator
+            assert re.search('Adding proxy', elector_log)
+            assert re.search('Removing proxy', elector_log)
+            break
+        except (AssertionError, subprocess.CalledProcessError) as error:
+            if time.time() < timeout_at:
+                sleep_seconds = 5
+                print(f'Waiting {sleep_seconds} seconds...')
+                time.sleep(sleep_seconds)
+                continue
 
-    #
-    # Make some (kind of lame) assertions
-    #
-    try:
-        # Search for a log message that indicates the informer is communicating with the validator.
-        elector_log = kubectl('logs', 'validator-0', 'informer', return_output=True)
-        assert re.search('Adding proxy', elector_log)
-        assert re.search('Removing proxy', elector_log)
+            print('\nTimeout out or assertion failed!\n', error)
+            kubectl('describe', 'statefulset/validator')
+            raise error
 
-    except AssertionError as error:
-        print('\n\nAssertion failed!\n\n', error)
-        kubectl('describe', 'statefulset/validator')
-        raise error
-
-    print('\nSuccess!\n')
+    print('\nSuccess ({time.time() - started_at} seconds)\n')
 
 
 def parse_args():
@@ -111,7 +113,7 @@ def parse_args():
     parser.add_argument('--no-docker-build',
                         dest='docker_build',
                         action='store_false')
-    parser.add_argument('--startup-delay',
+    parser.add_argument('--timeout',
                         default=90,
                         type=float)
 

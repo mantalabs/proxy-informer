@@ -1,5 +1,4 @@
 ---
-
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -34,7 +33,10 @@ spec:
       initContainers:
         - name: celo-init
           image: us.gcr.io/celo-org/geth:1.2.2-beta
-          command: ['sh', '-c', 'echo 123 > /root/.celo/.password && geth account new --password=/root/.celo/.password']
+          command:
+            - 'sh'
+            - '-c'
+            - 'echo a > /root/.celo/.password && geth account new --password=/root/.celo/.password'
           volumeMounts:
             - name: celo-data
               mountPath: /root/.celo
@@ -51,10 +53,7 @@ spec:
             - --syncmode=full
             - --rpc
             - --rpcaddr=0.0.0.0
-            - --rpcapi=eth,net,web3,debug,admin,personal,istanbul
-            - --light.serve=90
-            - --light.maxpeers=1000
-            - --maxpeers=1100
+            - --rpcapi=eth,istanbul
             - --datadir=/root/.celo
             - --password=/root/.celo/.password
             - --nousb
