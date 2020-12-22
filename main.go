@@ -334,8 +334,8 @@ func (controller *Controller) Synchronize() error {
 	// its configuration when we add a Proxy that shares a node ID with a
 	// configured Proxy. We can avoid this by removing Proxies first.
 	//
-	klog.Infof("Proxies to remove: %+v\n", proxiesToRemove)
 	for _, proxy := range proxiesToRemove {
+		klog.Infof("Removing proxy: %+v\n", proxy)
 		params := []interface{}{proxy.InternalEnodeUrl}
 		_, err := controller.validator.rpc("istanbul_removeProxy", params, IstanbulRemoveProxy{})
 		if err != nil {
@@ -343,8 +343,8 @@ func (controller *Controller) Synchronize() error {
 		}
 	}
 
-	klog.Infof("Proxies to add: %+v\n", proxiesToAdd)
 	for _, proxy := range proxiesToAdd {
+		klog.Infof("Adding proxy: %+v\n", proxy)
 		params := []interface{}{proxy.InternalEnodeUrl, proxy.ExternalEnodeUrl}
 		_, err := controller.validator.rpc("istanbul_addProxy", params, IstanbulAddProxy{})
 		if err != nil {

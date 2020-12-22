@@ -72,7 +72,8 @@ def main(delete_cluster=None,
     try:
         # Search for a log message that indicates the informer is communicating with the validator.
         elector_log = kubectl('logs', 'validator-0', 'informer', return_output=True)
-        assert re.search('Proxies to add', elector_log)
+        assert re.search('Adding proxy', elector_log)
+        assert re.search('Removing proxy', elector_log)
 
     except AssertionError as error:
         print('\n\nAssertion failed!\n\n', error)
