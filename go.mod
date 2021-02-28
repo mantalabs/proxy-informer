@@ -1,4 +1,4 @@
-module github.com/silasbw/proxy-informer
+module github.com/mantalabs/proxy-informer
 
 go 1.15
 
