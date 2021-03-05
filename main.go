@@ -26,7 +26,7 @@ import (
 )
 
 //
-// The Kubernetes Service annotations this controller uses for proxy discovery.
+// The annotations this controller uses for proxy discovery.
 //
 var externalEnodeURLAnnotation = "proxy.mantalabs.com/external-enode-url"
 var internalEnodeURLAnnotation = "proxy.mantalabs.com/internal-enode-url"
@@ -75,8 +75,8 @@ func main() {
 
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	flag.StringVar(&rpcURL, "rpc-url", "http://127.0.0.1:8545", "RPC URL")
-	flag.StringVar(&proxyNamespace, "proxy-namespace", "default", "namespace of proxy services")
-	flag.StringVar(&proxyLabelSelector, "proxy-label-selector", "proxy=true", "label selector to select proxy services")
+	flag.StringVar(&proxyNamespace, "proxy-namespace", "default", "namespace of proxy Pods")
+	flag.StringVar(&proxyLabelSelector, "proxy-label-selector", "proxy=true", "label selector to select proxy Pods")
 	flag.Parse()
 
 	clientset, err := newClientset(kubeconfig)
@@ -98,13 +98,12 @@ func main() {
 	//
 	// https://pkg.go.dev/k8s.io/client-go/tools/cache
 	// https://pkg.go.dev/k8s.io/client-go/informers
-	// https://pkg.go.dev/k8s.io/client-go@v1.5.1/1.5/pkg/api/v1#Service
 	factory := informers.NewSharedInformerFactoryWithOptions(clientset, 0,
 		informers.WithNamespace(proxyNamespace),
 		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
 			options.LabelSelector = proxyLabelSelector
 		}))
-	informer := factory.Core().V1().Services().Informer()
+	informer := factory.Core().V1().Pods().Informer()
 
 	validator, err := newValidator(rpcURL)
 	if err != nil {
@@ -166,24 +165,24 @@ type Controller struct {
 	informer  cache.SharedIndexInformer
 }
 
-func newController(validator *Validator, serviceInformer cache.SharedIndexInformer) (*Controller, error) {
-	controller := Controller{validator, serviceInformer}
+func newController(validator *Validator, podInformer cache.SharedIndexInformer) (*Controller, error) {
+	controller := Controller{validator, podInformer}
 
-	serviceInformer.AddEventHandler(
+	podInformer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				service := obj.(*corev1.Service)
-				klog.Infof("Added Service %s, re-synchronizing", service.ObjectMeta.Name)
+				pod := obj.(*corev1.Pod)
+				klog.Infof("Added Pod %s, re-synchronizing", pod.ObjectMeta.Name)
 				controller.Synchronize()
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldService := oldObj.(*corev1.Service)
-				klog.Infof("Updated Service %s, re-synchronizing", oldService.ObjectMeta.Name)
+				oldPod := oldObj.(*corev1.Pod)
+				klog.Infof("Updated Pod %s, re-synchronizing", oldPod.ObjectMeta.Name)
 				controller.Synchronize()
 			},
 			DeleteFunc: func(obj interface{}) {
-				service := obj.(*corev1.Service)
-				klog.Infof("Deleted Service %s, re-synchronizing", service.ObjectMeta.Name)
+				pod := obj.(*corev1.Pod)
+				klog.Infof("Deleted Pod %s, re-synchronizing", pod.ObjectMeta.Name)
 				controller.Synchronize()
 			},
 		},
@@ -196,7 +195,7 @@ func (controller *Controller) Run(stopChan chan struct{}) {
 
 	//
 	// Expect the informer to keep the Validator proxy configuration synchronized
-	// with Proxy Services running in Kubernetes.
+	// with Proxy Pods running in Kubernetes.
 	//
 	// Handle corner cases (e.g., Validator restarts) by periodically re-synchronizing.
 	//
@@ -231,16 +230,16 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 		return nil, fmt.Errorf("Kubernetes state not synchronized")
 	}
 
-	services := informer.GetStore().List()
+	pods := informer.GetStore().List()
 	proxies := make(map[string]Proxy, 0)
 	//
-	// Look for Services that have non-empty annotations for enode URLs and
+	// Look for Pods that have non-empty annotations for enode URLs and
 	// group enode URLs by node ID to define Proxies. geth will resolve/lookup
 	// hostnames into IPs before adding a Proxy to its configuration. Normalize
 	// enode URLs with lookup so that all Proxy objects have IPs.
 	//
-	for _, service := range services {
-		annotations := service.(*corev1.Service).ObjectMeta.GetAnnotations()
+	for _, pod := range pods {
+		annotations := pod.(*corev1.Pod).ObjectMeta.GetAnnotations()
 
 		externalEnodeURLString := annotations[externalEnodeURLAnnotation]
 		if externalEnodeURLString != "" {
@@ -280,7 +279,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 
 func (controller *Controller) Synchronize() error {
 	//
-	// Ensure the Validator proxy configuration matches the current Proxy Services
+	// Ensure the Validator proxy configuration matches the current Proxy Pods
 	// we discover.
 	// * Get the list of Proxies configured on the Validator
 	// * Get the list of Proxies discovered on Kubernetes
@@ -308,7 +307,7 @@ func (controller *Controller) Synchronize() error {
 				break
 			}
 		}
-		// This proxy is configured with the Validator, but a Kubernetes Service doesn't exist.
+		// This proxy is configured with the Validator, but a Kubernetes Pod doesn't exist.
 		if !current {
 			proxiesToRemove = append(proxiesToRemove, configuredProxy)
 		}
@@ -323,7 +322,7 @@ func (controller *Controller) Synchronize() error {
 				break
 			}
 		}
-		// A Kubernetes Service exists for this proxy, but it's not configured with the Validator.
+		// A Kubernetes Pod exists for this proxy, but it's not configured with the Validator.
 		if !configured {
 			proxiesToAdd = append(proxiesToAdd, currentProxy)
 		}
