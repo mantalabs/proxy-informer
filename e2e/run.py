@@ -58,7 +58,7 @@ def main(delete_cluster=None,
             '-t', 'mantalabs/proxy-informer:e2e', '.'])
         kind('load', 'docker-image', 'mantalabs/proxy-informer:e2e')
 
-    kubectl('apply', '-f', 'e2e/service.yaml')
+    kubectl('apply', '-f', 'e2e/pod.yaml')
     kubectl('apply', '-f', 'e2e/rbac.yaml')
     kubectl('apply', '-f', 'e2e/statefulset-tests.yaml')
 
@@ -82,7 +82,7 @@ def main(delete_cluster=None,
             kubectl('describe', 'statefulset/validator')
             raise error
 
-    print('\nSuccess ({time.time() - started_at} seconds)\n')
+    print(f'\nSuccess ({time.time() - started_at} seconds)\n')
 
 
 def parse_args():
