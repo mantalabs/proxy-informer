@@ -12,10 +12,8 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -35,7 +33,7 @@ var refreshPeriod = 10 * time.Second
 
 type ErrorResponse struct {
 	Jsonrpc string
-	Id      int
+	ID      int `json:"id"`
 	Error   struct {
 		Code    int
 		Message string
@@ -43,25 +41,25 @@ type ErrorResponse struct {
 }
 
 type Proxy struct {
-	ExternalEnodeUrl string
-	InternalEnodeUrl string
+	ExternalEnodeURL string
+	InternalEnodeURL string
 }
 
 type IstanbulGetProxies struct {
 	Jsonrpc string
-	Id      int
+	ID      int `json:"id"`
 	Result  []Proxy
 }
 
 type IstanbulAddProxy struct {
 	Jsonrpc string
-	Id      int
+	ID      int `json:"id"`
 	Result  bool
 }
 
 type IstanbulRemoveProxy struct {
 	Jsonrpc string
-	Id      int
+	ID      int `json:"id"`
 	Result  bool
 }
 
@@ -104,16 +102,8 @@ func main() {
 			options.LabelSelector = proxyLabelSelector
 		}))
 	informer := factory.Core().V1().Pods().Informer()
-
-	validator, err := newValidator(rpcURL)
-	if err != nil {
-		klog.Fatalf("Failed to create Validator: %v", err)
-	}
-
-	controller, err := newController(validator, informer)
-	if err != nil {
-		klog.Fatalf("Failed to create Controller: %v", err)
-	}
+	validator := newValidator(rpcURL)
+	controller := newController(validator, informer)
 
 	controller.Run(stopChan)
 }
@@ -122,10 +112,10 @@ type Validator struct {
 	rpcURL string
 }
 
-func newValidator(rpcURL string) (*Validator, error) {
+func newValidator(rpcURL string) *Validator {
 	validator := Validator{}
 	validator.rpcURL = rpcURL
-	return &validator, nil
+	return &validator
 }
 
 func (validator *Validator) GetConfiguredProxies() ([]Proxy, error) {
@@ -165,7 +155,7 @@ type Controller struct {
 	informer  cache.SharedIndexInformer
 }
 
-func newController(validator *Validator, podInformer cache.SharedIndexInformer) (*Controller, error) {
+func newController(validator *Validator, podInformer cache.SharedIndexInformer) *Controller {
 	controller := Controller{validator, podInformer}
 
 	podInformer.AddEventHandler(
@@ -187,7 +177,7 @@ func newController(validator *Validator, podInformer cache.SharedIndexInformer) 
 			},
 		},
 	)
-	return &controller, nil
+	return &controller
 }
 
 func (controller *Controller) Run(stopChan chan struct{}) {
@@ -227,11 +217,11 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 	informer := controller.informer
 
 	if !informer.HasSynced() {
-		return nil, fmt.Errorf("Kubernetes state not synchronized")
+		return nil, fmt.Errorf("kubernetes state not synchronized")
 	}
 
 	pods := informer.GetStore().List()
-	proxies := make(map[string]Proxy, 0)
+	proxies := make(map[string]Proxy)
 	//
 	// Look for Pods that have non-empty annotations for enode URLs and
 	// group enode URLs by node ID to define Proxies. geth will resolve/lookup
@@ -248,7 +238,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 				klog.Warningf("Failed to parse enode %v: %v", externalEnodeURLString, err)
 			} else {
 				proxy := proxies[externalEnodeURL.User.Username()]
-				proxy.ExternalEnodeUrl = externalEnodeURL.String()
+				proxy.ExternalEnodeURL = externalEnodeURL.String()
 				proxies[externalEnodeURL.User.Username()] = proxy
 			}
 		}
@@ -260,7 +250,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 				klog.Warningf("Failed to parse enode %v: %v", internalEnodeURLString, err)
 			} else {
 				proxy := proxies[internalEnodeURL.User.Username()]
-				proxy.InternalEnodeUrl = internalEnodeURL.String()
+				proxy.InternalEnodeURL = internalEnodeURL.String()
 				proxies[internalEnodeURL.User.Username()] = proxy
 			}
 		}
@@ -268,7 +258,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 
 	result := make([]Proxy, 0)
 	for _, proxy := range proxies {
-		if proxy.InternalEnodeUrl != "" && proxy.ExternalEnodeUrl != "" {
+		if proxy.InternalEnodeURL != "" && proxy.ExternalEnodeURL != "" {
 			result = append(result, proxy)
 		} else {
 			klog.Infof("Skipping partially defined proxy: %+v", proxy)
@@ -277,7 +267,7 @@ func (controller *Controller) GetCurrentProxies() ([]Proxy, error) {
 	return result, nil
 }
 
-func (controller *Controller) Synchronize() error {
+func (controller *Controller) Synchronize() {
 	//
 	// Ensure the Validator proxy configuration matches the current Proxy Pods
 	// we discover.
@@ -290,12 +280,14 @@ func (controller *Controller) Synchronize() error {
 
 	configuredProxies, err := controller.validator.GetConfiguredProxies()
 	if err != nil {
-		return err
+		klog.Warningf("Synchronize failed (GetConfiguredProxies): %v", err)
+		return
 	}
 
 	currentProxies, err := controller.GetCurrentProxies()
 	if err != nil {
-		return err
+		klog.Warningf("Synchronize failed (GetCurrentProxies): %v", err)
+		return
 	}
 
 	proxiesToRemove := make([]Proxy, 0)
@@ -335,7 +327,7 @@ func (controller *Controller) Synchronize() error {
 	//
 	for _, proxy := range proxiesToRemove {
 		klog.Infof("Removing proxy: %+v\n", proxy)
-		params := []interface{}{proxy.InternalEnodeUrl}
+		params := []interface{}{proxy.InternalEnodeURL}
 		_, err := controller.validator.rpc("istanbul_removeProxy", params, IstanbulRemoveProxy{})
 		if err != nil {
 			klog.Warningf("Failed to remove proxy from validator: %+v %v", proxy, err)
@@ -344,14 +336,12 @@ func (controller *Controller) Synchronize() error {
 
 	for _, proxy := range proxiesToAdd {
 		klog.Infof("Adding proxy: %+v\n", proxy)
-		params := []interface{}{proxy.InternalEnodeUrl, proxy.ExternalEnodeUrl}
+		params := []interface{}{proxy.InternalEnodeURL, proxy.ExternalEnodeURL}
 		_, err := controller.validator.rpc("istanbul_addProxy", params, IstanbulAddProxy{})
 		if err != nil {
 			klog.Warningf("Failed to add proxy to validator: %+v %v", proxy, err)
 		}
 	}
-
-	return nil
 }
 
 func lookupURL(urlString string) (*url.URL, error) {
