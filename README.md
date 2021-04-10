@@ -20,22 +20,17 @@ Command-line arguments configure the proxy-informer:
 
 | Argument | Default | Description |
 | -------- | ------- | ----------- |
-| `-proxy-namespace` | `default` | `Namespace` to search for proxy `Service` objects |
-| `-proxy-label-selector` | `proxy=true` | [Label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/) to identify `Service` objects |
+| `-proxy-namespace` | `default` | `Namespace` to search for proxy `Pod` objects |
+| `-proxy-label-selector` | `proxy=true` | [Label selector](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/) to identify `Pod` objects |
 
 The proxy-informer discovers internal and external [enode
 URL](https://eth.wiki/fundamentals/enode-url-format) values by reading
-two annotations on `Service` objects:
+two annotations on `Pod` objects:
 
 | Annotation | Description |
 | ---------- | ----------- |
 | `proxy.mantalabs.com/internal-enode-url` | Internal enode URL |
 | `proxy.mantalabs.com/external-enode-url` | External enode URL |
-
-Annotations can be on two different `Service` objects. For example, on
-an internal `Service` for a validator and on a public `Service` for
-external traffic. proxy-informer will match internal and external
-enode URLs based on their node ID.
 
 ## Related
 
